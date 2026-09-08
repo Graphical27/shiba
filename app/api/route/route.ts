@@ -1,4 +1,5 @@
 import { getLiveForecast } from '@/lib/flood/live';
+import { getOpenMeteoForecast } from '@/lib/flood/open-meteo';
 import { simulate } from '@/lib/flood/engine';
 import { makeRainCube } from '@/lib/flood/fixtures';
 import { validateDataset, validateRain } from '@/lib/flood/validation';
@@ -24,20 +25,27 @@ export async function POST(request: Request) {
     const body = await readBody(request);
     if (body.from === undefined || body.to === undefined)
       throw new InputError('from and to are required');
+    if (
+      body.source !== undefined &&
+      !['live', 'open-meteo'].includes(String(body.source))
+    )
+      throw new InputError('source must be live or open-meteo');
     const scenario = validateScenario(body.scenario ?? {});
     const dataset = body.dataset ? validateDataset(body.dataset) : null;
     const forecast =
-      body.source === 'live'
-        ? await getLiveForecast()
-        : dataset
-          ? simulate(
-              dataset,
-              body.rainfall
-                ? validateRain(body.rainfall, dataset)
-                : makeRainCube(dataset, scenario),
-              scenario,
-            )
-          : getForecast(scenario);
+      body.source === 'open-meteo'
+        ? await getOpenMeteoForecast(scenario)
+        : body.source === 'live'
+          ? await getLiveForecast()
+          : dataset
+            ? simulate(
+                dataset,
+                body.rainfall
+                  ? validateRain(body.rainfall, dataset)
+                  : makeRainCube(dataset, scenario),
+                scenario,
+              )
+            : getForecast(scenario);
     const result = routeForecast(
       forecast,
       body.from as string | Point,

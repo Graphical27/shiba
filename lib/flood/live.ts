@@ -31,14 +31,17 @@ export async function getLiveForecast(): Promise<Forecast> {
     return cached.forecast;
   const token = process.env.FLOOD_INPUT_TOKEN;
   let response: Response;
+  const ac = new AbortController();
+  const timeout = setTimeout(() => ac.abort(), 10000);
   try {
     response = await fetch(url, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
-      signal: AbortSignal.timeout(10000),
-      redirect: 'error',
+      signal: ac.signal,
     });
   } catch {
     throw new InputError('The configured live feed could not be reached', 502);
+  } finally {
+    clearTimeout(timeout);
   }
   if (!response.ok)
     throw new InputError('The configured live feed returned an error', 502);

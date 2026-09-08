@@ -179,7 +179,8 @@ export function routeForecast(
     departureMinute >= 180 ||
     duration > 30 ||
     departureMinute + duration > 180 ||
-    (f.dataMode === 'live' && Date.now() > Date.parse(f.validUntil));
+    ((f.dataMode === 'live' || f.dataMode === 'weather_model') &&
+      Date.now() > Date.parse(f.validUntil));
   const status = insufficient
     ? 'insufficient_data'
     : candidate

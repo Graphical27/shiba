@@ -7,6 +7,8 @@ export function GET() {
     calibrated: false,
     liveFeedConfigured: !!process.env.FLOOD_INPUT_URL,
     adapters: {
+      openMeteo:
+        'available: /api/weather; no API key; weather-model forecasts with synthetic catchment',
       imdDwr: 'unconfigured: numeric authorized feed required',
       pysteps: 'external adapter: normalized rainfall cube accepted',
       imerg: 'unconfigured: delayed regional context only',

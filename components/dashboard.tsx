@@ -75,6 +75,7 @@ const initial: Scenario = {
   blockage: 0.3,
   tailwaterM: 0,
 };
+type DataSource = 'open-meteo' | 'demo' | 'live' | 'imported';
 export default function Dashboard() {
   const [scenario, setScenario] = useState<Scenario>(initial),
     [draft, setDraft] = useState(initial),
@@ -93,32 +94,43 @@ export default function Dashboard() {
     [routeBusy, setRouteBusy] = useState(false),
     [settings, setSettings] = useState(false),
     [importing, setImporting] = useState(false),
-    [custom, setCustom] = useState(false),
-    [live, setLive] = useState(false);
+    [source, setSource] = useState<DataSource>('open-meteo'),
+    [loadedSource, setLoadedSource] = useState<DataSource>('demo');
+  const custom = loadedSource === 'imported';
   const requestId = useRef(0),
     state = useRef({ forecast, minute });
   state.current = { forecast, minute };
   useEffect(() => {
+    if (source === 'imported') return;
     const id = ++requestId.current,
       controller = new AbortController();
     setLoading(true);
     setError('');
     setRoute(null);
     setSelected(null);
-    setCustom(false);
     const query = new URLSearchParams(
       Object.entries(scenario).map(([k, v]) => [k, String(v)]),
     );
-    fetch(live ? '/api/live' : `/api/forecast?${query}`, {
-      signal: controller.signal,
-    })
+    fetch(
+      source === 'live'
+        ? '/api/live'
+        : source === 'open-meteo'
+          ? `/api/weather?${query}`
+          : `/api/forecast?${query}`,
+      {
+        signal: controller.signal,
+      },
+    )
       .then(async (r) => {
         const body = (await r.json()) as Forecast & { error?: string };
         if (!r.ok) throw new Error(body.error ?? 'Forecast unavailable');
         return body as Forecast;
       })
       .then((f) => {
-        if (id === requestId.current) setForecast(f);
+        if (id === requestId.current) {
+          setForecast(f);
+          setLoadedSource(source);
+        }
       })
       .catch((e) => {
         if (id === requestId.current && e.name !== 'AbortError')
@@ -128,7 +140,7 @@ export default function Dashboard() {
         if (id === requestId.current) setLoading(false);
       });
     return () => controller.abort();
-  }, [scenario, refresh, live]);
+  }, [scenario, refresh, source]);
   useEffect(() => {
     if (!playing) return;
     const timer = setInterval(
@@ -148,10 +160,10 @@ export default function Dashboard() {
     setRoute(null);
   }, [minute]);
   useEffect(() => {
-    if (!autoRefresh || custom) return;
+    if (!autoRefresh || source === 'imported' || importing) return;
     const timer = setInterval(() => setRefresh((v) => v + 1), 60000);
     return () => clearInterval(timer);
-  }, [autoRefresh, custom]);
+  }, [autoRefresh, source, importing]);
   useEffect(() => {
     const context = (
       document as Document & {
@@ -240,10 +252,11 @@ export default function Dashboard() {
     return () => lifecycle.abort();
   }, []);
   const isLive = forecast?.dataMode === 'live';
+  const isWeatherModel = forecast?.dataMode === 'weather_model';
   const frame = forecast?.frames[minute / 15],
     city = forecast?.dataset.city ?? scenario.city;
   const priorities =
-    forecast && frame
+    forecast && frame && frame.summary.peakDepthCm >= 0.1
       ? [...forecast.dataset.roads]
           .sort(
             (a, b) => frame.streetDepthsCm[b.id] - frame.streetDepthsCm[a.id],
@@ -287,7 +300,7 @@ export default function Dashboard() {
       ]
     : [];
   const changeCity = (value: string) => {
-    setLive(false);
+    if (source === 'imported' || source === 'live') setSource('open-meteo');
     setScenario((s) => ({ ...s, city: value as CityId }));
     setMinute(60);
     setPlaying(false);
@@ -325,6 +338,7 @@ export default function Dashboard() {
           calibrated: false,
           minute,
           generatedAt: forecast.generatedAt,
+          forcing: forecast.forcing,
           warning: forecast.warnings[0],
         },
         features: forecast.dataset.roads.map((e) => ({
@@ -364,7 +378,8 @@ export default function Dashboard() {
       if (!response.ok) throw new Error(body.error);
       if (id === requestId.current) {
         setForecast(body);
-        setCustom(true);
+        setSource('imported');
+        setLoadedSource('imported');
         setAutoRefresh(false);
         setPlaying(false);
         setRoute(null);
@@ -439,11 +454,13 @@ export default function Dashboard() {
           </div>
           <span className="demo-pill">
             <span />
-            {isLive
-              ? 'EXTERNAL FEED'
-              : custom
-                ? 'IMPORTED SCENARIO'
-                : 'DEMO ENVIRONMENT'}
+            {isWeatherModel
+              ? 'OPEN-METEO FORECAST'
+              : isLive
+                ? 'EXTERNAL FEED'
+                : custom
+                  ? 'IMPORTED SCENARIO'
+                  : 'DEMO ENVIRONMENT'}
           </span>
         </header>
         <div className="page-content">
@@ -470,6 +487,39 @@ export default function Dashboard() {
               </p>
             </div>
             <div className="heading-actions">
+              <Select
+                value={source}
+                onValueChange={(value) => {
+                  if (value && value !== 'imported') {
+                    setSource(value as DataSource);
+                    setPlaying(false);
+                  }
+                }}
+              >
+                <SelectTrigger
+                  className="city-select"
+                  aria-label="Rainfall data source"
+                >
+                  <CloudRain size={16} />
+                  <SelectValue>
+                    {source === 'open-meteo'
+                      ? 'Open-Meteo · free'
+                      : source === 'live'
+                        ? 'Custom live feed'
+                        : source === 'imported'
+                          ? 'Imported file'
+                          : 'Synthetic demo'}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="open-meteo">Open-Meteo · free</SelectItem>
+                  <SelectItem value="demo">Synthetic demo</SelectItem>
+                  <SelectItem value="live">Custom live feed</SelectItem>
+                  <SelectItem value="imported" disabled>
+                    Imported file
+                  </SelectItem>
+                </SelectContent>
+              </Select>
               <Select
                 value={scenario.city}
                 onValueChange={(v) => v && changeCity(v)}
@@ -498,18 +548,22 @@ export default function Dashboard() {
           <div className="scenario-notice">
             <Radio size={16} />
             <strong>
-              {isLive
-                ? 'External feed'
-                : custom
-                  ? 'Imported scenario'
-                  : 'Simulation mode'}
+              {isWeatherModel
+                ? 'Weather forecast'
+                : isLive
+                  ? 'External feed'
+                  : custom
+                    ? 'Imported scenario'
+                    : 'Simulation mode'}
             </strong>
             <span>
-              {isLive
-                ? 'External numeric feed. Model remains uncalibrated; check data provenance.'
-                : custom
-                  ? 'Using your uploaded catchment. Model remains uncalibrated.'
-                  : 'Synthetic rainfall, terrain and drains. Illustrative street geometry.'}
+              {isWeatherModel
+                ? 'Open-Meteo rainfall with synthetic terrain and drains. Weather-model forecast; not radar observations.'
+                : isLive
+                  ? 'External numeric feed. Model remains uncalibrated; check data provenance.'
+                  : custom
+                    ? 'Using your uploaded catchment. Model remains uncalibrated.'
+                    : 'Synthetic rainfall, terrain and drains. Illustrative street geometry.'}
             </span>
             <button
               className="notice-right"
@@ -525,13 +579,16 @@ export default function Dashboard() {
             <div className="error-banner" role="alert">
               <AlertCircle size={18} />
               <span>{error}</span>
+              <button onClick={() => setRefresh((n) => n + 1)}>
+                Retry forecast
+              </button>
               <button
                 onClick={() => {
-                  setLive(false);
+                  setSource('demo');
                   setRefresh((n) => n + 1);
                 }}
               >
-                Retry demo
+                Use synthetic demo
               </button>
               <button aria-label="Dismiss error" onClick={() => setError('')}>
                 <X size={16} />
@@ -544,7 +601,7 @@ export default function Dashboard() {
               <h2>{error ? 'Forecast unavailable' : 'Routing the rain…'}</h2>
               <p>
                 {error
-                  ? 'Retry to load the demonstration.'
+                  ? 'Retry the selected source, or choose the synthetic demo.'
                   : 'Calculating 13 coupled surface and drainage frames.'}
               </p>
             </div>
@@ -562,9 +619,11 @@ export default function Dashboard() {
                     </div>
                     <p>
                       <span className={'tiny-dot ' + color} />
-                      {(custom || isLive) && label === 'Rainfall intensity'
-                        ? 'Catchment mean · external'
-                        : caption}
+                      {isWeatherModel && label === 'Rainfall intensity'
+                        ? 'Open-Meteo · model forecast'
+                        : (custom || isLive) && label === 'Rainfall intensity'
+                          ? 'Catchment mean · external'
+                          : caption}
                     </p>
                   </div>
                 ))}
@@ -581,8 +640,12 @@ export default function Dashboard() {
                   onImport={importSimulation}
                   importing={importing}
                   onLive={() => {
-                    setLive(true);
+                    setSource('live');
                     setAutoRefresh(true);
+                    setRefresh((n) => n + 1);
+                  }}
+                  onWeather={() => {
+                    setSource('open-meteo');
                     setRefresh((n) => n + 1);
                   }}
                 />
@@ -693,6 +756,12 @@ export default function Dashboard() {
                               <p className="muted">
                                 Highest projected street depths
                               </p>
+                              {priorities.length === 0 && (
+                                <p className="card-note">
+                                  No street depths above 0.1 cm in this forecast
+                                  frame.
+                                </p>
+                              )}
                               {priorities.map((e, i) => (
                                 <button
                                   className="location-row"
@@ -788,7 +857,7 @@ export default function Dashboard() {
               <div className="forecast-status">
                 <span>
                   <span className="status-dot" />
-                  Run issued{' '}
+                  {isWeatherModel ? 'Forecast starts' : 'Run issued'}{' '}
                   {new Date(forecast.generatedAt).toLocaleTimeString('en-IN', {
                     hour: '2-digit',
                     minute: '2-digit',
@@ -805,7 +874,7 @@ export default function Dashboard() {
                     onCheckedChange={setAutoRefresh}
                   />
                   <button
-                    aria-label="Refresh demo forecast"
+                    aria-label="Refresh selected forecast"
                     onClick={() => setRefresh((n) => n + 1)}
                     disabled={loading || custom}
                   >
@@ -834,47 +903,71 @@ export default function Dashboard() {
               0–180 minute horizon
             </span>
           </footer>
+          {isWeatherModel && (
+            <div className="weather-attribution">
+              <a
+                href="https://open-meteo.com/"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Weather data by Open-Meteo
+              </a>
+              <span>
+                CC BY 4.0 · Free non-commercial API · India: hourly forecasts
+                interpolated to 15 minutes
+              </span>
+            </div>
+          )}
         </div>
       </main>
       <Dialog open={settings} onOpenChange={setSettings}>
         <DialogContent className="scenario-dialog">
           <DialogHeader>
-            <DialogTitle>Explore a rainfall scenario</DialogTitle>
+            <DialogTitle>
+              {source === 'open-meteo'
+                ? 'Adjust the drainage scenario'
+                : 'Explore a rainfall scenario'}
+            </DialogTitle>
             <DialogDescription>
-              Recalculate the synthetic catchment with different rainfall, drain
-              blockage and outfall levels.
+              {source === 'open-meteo'
+                ? 'Keep the Open-Meteo rainfall forecast and change assumed drain blockage and outfall levels.'
+                : 'Recalculate the synthetic catchment with different rainfall, drain blockage and outfall levels.'}
             </DialogDescription>
           </DialogHeader>
           {[
             ['Rainfall peak', 'rainfallMmHr', 0, 200, 5, 'mm/hr'],
             ['Drain conductance loss', 'blockage', 0, 1, 0.05, '%'],
             ['Tailwater above outfall invert', 'tailwaterM', 0, 4, 0.1, 'm'],
-          ].map(([label, key, min, max, step, unit]) => (
-            <div className="scenario-control" key={String(key)}>
-              <label>
-                {label}
-                <strong>
-                  {key === 'blockage'
-                    ? Math.round(draft.blockage * 100)
-                    : draft[key as keyof Scenario]}{' '}
-                  {unit}
-                </strong>
-              </label>
-              <Slider
-                aria-label={String(label)}
-                min={Number(min)}
-                max={Number(max)}
-                step={Number(step)}
-                value={[Number(draft[key as keyof Scenario])]}
-                onValueChange={(v) =>
-                  setDraft((d) => ({
-                    ...d,
-                    [String(key)]: Array.isArray(v) ? v[0] : v,
-                  }))
-                }
-              />
-            </div>
-          ))}
+          ]
+            .filter(
+              ([, key]) => source !== 'open-meteo' || key !== 'rainfallMmHr',
+            )
+            .map(([label, key, min, max, step, unit]) => (
+              <div className="scenario-control" key={String(key)}>
+                <label>
+                  {label}
+                  <strong>
+                    {key === 'blockage'
+                      ? Math.round(draft.blockage * 100)
+                      : draft[key as keyof Scenario]}{' '}
+                    {unit}
+                  </strong>
+                </label>
+                <Slider
+                  aria-label={String(label)}
+                  min={Number(min)}
+                  max={Number(max)}
+                  step={Number(step)}
+                  value={[Number(draft[key as keyof Scenario])]}
+                  onValueChange={(v) =>
+                    setDraft((d) => ({
+                      ...d,
+                      [String(key)]: Array.isArray(v) ? v[0] : v,
+                    }))
+                  }
+                />
+              </div>
+            ))}
           <p className="card-note">
             100% conductance loss stops every modeled pipe. Elevated tailwater
             can force water back into drains.
@@ -890,7 +983,7 @@ export default function Dashboard() {
               className="primary-button"
               onClick={() => {
                 setSettings(false);
-                setLive(false);
+                if (source !== 'open-meteo') setSource('demo');
                 setScenario({ ...draft });
                 setPlaying(false);
               }}

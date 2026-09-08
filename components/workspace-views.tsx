@@ -291,17 +291,20 @@ export function DataView({
   onImport,
   importing,
   onLive,
+  onWeather,
 }: {
   forecast: Forecast;
   onImport: (file: File) => void;
   importing: boolean;
   onLive: () => void;
+  onWeather: () => void;
 }) {
   const [copied, setCopied] = useState(false);
   const b = forecast.massBalance;
   const sample = {
+    ...(forecast.dataMode === 'weather_model' ? { source: 'open-meteo' } : {}),
     scenario: {
-      city: 'mumbai',
+      city: forecast.dataset.city,
       rainfallMmHr: 80,
       blockage: 0.3,
       tailwaterM: 0,
@@ -313,6 +316,47 @@ export function DataView({
   };
   return (
     <div className="data-view">
+      <section className="wide-card padded-card weather-source-card">
+        <div className="section-title">
+          <h2>Open-Meteo · free rainfall forecasts</h2>
+          <button className="primary-button" onClick={onWeather}>
+            Load Open-Meteo <ArrowUpRight size={15} />
+          </button>
+        </div>
+        <p>
+          No account or API token is needed. The app fetches the selected city's
+          weather forecast and converts rainfall totals into model inputs.
+          Terrain, roads and drains remain synthetic.
+        </p>
+        {forecast.forcing?.provider === 'Open-Meteo' && (
+          <>
+            <p>
+              <strong>Retrieved:</strong>{' '}
+              {new Date(forecast.forcing.retrievedAt).toLocaleString('en-IN', {
+                timeZone: 'Asia/Kolkata',
+              })}{' '}
+              IST. Upstream model initialization and observation times are not
+              supplied by this API.
+            </p>
+            <p>{forecast.forcing.spatialMethod}</p>
+            <a
+              href={forecast.forcing.sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open the exact rainfall API request ↗
+            </a>
+          </>
+        )}
+        <p className="card-note">
+          Weather data by{' '}
+          <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">
+            Open-Meteo
+          </a>{' '}
+          · CC BY 4.0. India’s 15-minute values are interpolated from hourly
+          weather-model output. This is not an IMD radar feed.
+        </p>
+      </section>
       <section className="wide-card model-overview">
         <div className="section-title">
           <h2>A coupled model, with visible assumptions.</h2>
@@ -325,7 +369,9 @@ export function DataView({
         </p>
         <div className="pipeline-flow">
           {[
-            'Rainfall advection',
+            forecast.dataMode === 'weather_model'
+              ? 'Weather-model rainfall'
+              : 'Rainfall advection',
             '2D surface flow',
             '1D drain graph',
             'Street depths',

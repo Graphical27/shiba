@@ -67,19 +67,59 @@ export function validateRain(value: unknown, dataset: Dataset): RainCube {
       finite(cell, 'rainfall cell', 0, 500);
     }
   }
-  if (!['synthetic', 'replay', 'live'].includes(String(v.mode)))
+  if (
+    !['synthetic', 'replay', 'live', 'weather_model'].includes(String(v.mode))
+  )
     throw new InputError('Invalid rainfall data mode');
   if (typeof v.source !== 'string' || !v.source.trim() || v.source.length > 500)
     throw new InputError(
       'Rainfall source is required (maximum 500 characters)',
     );
-  for (const key of ['issuedAt', 'observedThrough'])
+  for (const key of v.mode === 'weather_model'
+    ? ['issuedAt']
+    : ['issuedAt', 'observedThrough'])
     if (
       typeof v[key] !== 'string' ||
       !Number.isFinite(Date.parse(v[key] as string))
     )
       throw new InputError(`${key} must be an ISO timestamp`);
+  if (v.mode === 'weather_model') {
+    if (v.observedThrough !== null)
+      throw new InputError(
+        'Weather-model forecasts must not invent observation timestamps',
+      );
+    const provenance = object(v.provenance);
+    for (const key of [
+      'provider',
+      'product',
+      'sourceUrl',
+      'temporalMethod',
+      'spatialMethod',
+      'attribution',
+    ]) {
+      if (
+        typeof provenance[key] !== 'string' ||
+        !provenance[key] ||
+        (provenance[key] as string).length > 1000
+      )
+        throw new InputError(`Weather forecast ${key} is required`);
+    }
+    if (
+      typeof provenance.retrievedAt !== 'string' ||
+      !Number.isFinite(Date.parse(provenance.retrievedAt))
+    )
+      throw new InputError('Forecast retrieval time is required');
+    for (const key of ['modelRunTime', 'observationTime']) {
+      if (
+        provenance[key] !== null &&
+        (typeof provenance[key] !== 'string' ||
+          !Number.isFinite(Date.parse(provenance[key] as string)))
+      )
+        throw new InputError(`${key} must be a timestamp or null when unknown`);
+    }
+  }
   if (
+    v.mode !== 'weather_model' &&
     Date.parse(v.observedThrough as string) > Date.parse(v.issuedAt as string)
   )
     throw new InputError('Observation time cannot follow issue time');

@@ -282,6 +282,7 @@ export function simulate(
     generatedAt: rain.issuedAt,
     validUntil: new Date(Date.parse(rain.issuedAt) + 10800000).toISOString(),
     dataMode: rain.mode,
+    ...(rain.provenance ? { forcing: rain.provenance } : {}),
     calibrated: false,
     scenario,
     dataset,

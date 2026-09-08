@@ -63,11 +63,25 @@ export interface Scenario {
   blockage: number;
   tailwaterM: number;
 }
+export interface RainfallProvenance {
+  provider: string;
+  product: string;
+  sourceUrl: string;
+  retrievedAt: string;
+  modelRunTime: string | null;
+  observationTime: string | null;
+  temporalMethod: string;
+  spatialMethod: string;
+  attribution: string;
+  requestedPoint?: Point;
+  weatherGridPoint?: Point;
+}
 export interface RainCube {
   issuedAt: string;
-  observedThrough: string;
+  observedThrough: string | null;
   source: string;
-  mode: 'synthetic' | 'replay' | 'live';
+  mode: 'synthetic' | 'replay' | 'live' | 'weather_model';
+  provenance?: RainfallProvenance;
   unit: 'mm/h';
   width: number;
   height: number;
@@ -98,6 +112,7 @@ export interface Forecast {
   generatedAt: string;
   validUntil: string;
   dataMode: RainCube['mode'];
+  forcing?: RainfallProvenance;
   calibrated: false;
   scenario: Scenario;
   dataset: Dataset;

@@ -5,9 +5,44 @@ export function GET() {
       title: 'Varsha Urban Flood API',
       version: '0.1.0',
       description:
-        'Research prototype; synthetic defaults. Depths and route thresholds are unvalidated.',
+        'Research prototype with Open-Meteo weather-model rainfall and synthetic catchments. Depths and route thresholds are unvalidated.',
     },
     paths: {
+      '/api/weather': {
+        get: {
+          summary:
+            'Open-Meteo rainfall coupled with the selected synthetic catchment; no API key',
+          parameters: [
+            {
+              name: 'city',
+              in: 'query',
+              schema: { type: 'string', enum: ['mumbai', 'delhi', 'chennai'] },
+            },
+            {
+              name: 'blockage',
+              in: 'query',
+              schema: { type: 'number', minimum: 0, maximum: 1 },
+            },
+            {
+              name: 'tailwaterM',
+              in: 'query',
+              schema: { type: 'number', minimum: 0, maximum: 4 },
+            },
+          ],
+          responses: {
+            '200': {
+              description:
+                'Forecast with dataMode weather_model and rainfall provenance',
+            },
+            '400': { description: 'Invalid parameters' },
+            '502': {
+              description:
+                'Weather provider unavailable or incomplete coverage',
+            },
+            '503': { description: 'Provider quota exceeded or requests busy' },
+          },
+        },
+      },
       '/api/live': {
         get: {
           summary: 'Configured live input feed and coupled forecast',
@@ -69,8 +104,9 @@ export function GET() {
                   properties: {
                     source: {
                       type: 'string',
-                      enum: ['live'],
-                      description: 'Use configured live hazard feed',
+                      enum: ['live', 'open-meteo'],
+                      description:
+                        'Use the configured live feed or free Open-Meteo weather-model rainfall',
                     },
                     dataset: {
                       type: 'object',

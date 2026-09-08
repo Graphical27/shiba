@@ -1337,3 +1337,36 @@
     grid-column: 1/-1;
   }
 }
+.weather-attribution {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: #85969f;
+  font-size: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.weather-attribution a {
+  color: #427f73;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.weather-source-card {
+  margin-bottom: 22px;
+}
+.heading-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+@media (max-width: 767px) {
+  .heading-actions {
+    justify-content: flex-start;
+  }
+  .weather-source-card .section-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
